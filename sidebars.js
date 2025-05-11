@@ -572,8 +572,9 @@ const sidebars = {
     {
       type: "category",
       label: "Quick Start Guide",
-      collapsible: true,
-      collapsed: true,
+      collapsible: false,
+      collapsed: false,
+      className: "category-as-header",
       items: [
         "quick-start/fastapi",
         "quick-start/django",
