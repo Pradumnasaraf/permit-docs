@@ -1,4 +1,219 @@
 ---
-sidebar_position: 2
 title: Next.js
+sidebar_position: 3
 ---
+
+## Overview
+
+Flask is a lightweight WSGI web application framework in Python. It is designed with simplicity and flexibility in mind. In this guide, we will quickly go through the steps to integrate Permit.io with Flask. We will use the Permit's CLI to create a new environment and a policy with a template. Then we will use the Permit SDK to integrate it with our Flask application. We will also setup the PDP (Policy Decision Point) server locally using Docker.
+
+We will see how we can sync users and tenant, assigning roles easily with Permit Dashboard. Then we will see how we can enforce policies using the Permit SDK in our Flask application.
+
+## Prerequisites
+
+- Docker (for running the PDP server)
+- Node.js (for running the Permit CLI)
+- Permit.io account ([Follow this guide](/quickstart) to create an account)
+
+## Getting started
+
+To get started, we will  first create a new policy with a template using the Permit CLI. Assuming you have already created an account with Permit.io.
+
+### Hands on with Permit CLI
+
+To get started, we will first install the Permit CLI. To install the CLI, execute the below command in your terminal. We will be using CLI to create policies, running PDP server and other tasks.
+
+```bash
+npm install -g @permitio/cli
+```
+
+Once the installation is complete, execute `permit` to confirm the installation. Then to authenticate, execute `permit login`. This will open a browser window and ask you to login with your Permit account. After logging in, the CLI will be authenticated and ready to use. This will also login into default environment (a project can have multiple environments),we can change environment by executing `permit env select` and then select the environment we want to use.
+
+Now, let's create a policy with a template. The benefit of using a template is that we can create a policy with pre-defined roles and resources with all the good practices. This will save us time and effort in creating a policy from scratch. To check the available templates, execute `permit template list`. Based on our need we can apply the template to a new policy by executing `permit template apply <template-name>`. 
+
+![cli template list](/img/quick-start-guide/env-template.png)
+
+We have used the **fga-tradeoffs** template to create a new policy.
+
+Now, let's visit the Permit dashboard to check the created policy and also get the API key that we will use to authenticate our application when using the Permit SDK.
+
+As we can see in the image below, CLI has created Resources, Roles and Policies. Now let's add **Read** permission to the **Viewer** to the **Visit** resource. It very easy to add permissions using the dashboard. We can also add more roles and resources as per our need.
+
+![permit policy](/img/quick-start-guide/policy-editor-dash.png)
+
+To get the API key, click on the **Projects** from the left sidebar, then click on the the three dots on on the environment we want to use and click on **Copy API Key** and store it in a safe place. This API key will be used to authenticate our application with Permit.io. If you are having any difficulty in getting the API key, follow this [guide](/overview/connecting-your-app/#1-get-your-permit-environment-api-key).
+
+Once we are done let's move towards the implementation part.
+
+### Next.js Integration
+
+Once you have a Next.js application ready, we can start integrating Permit.io with it. We will be using the Permit SDK to integrate it with our our application. We  can install the Permit SDK using npm. 
+
+```bash
+npm install permitio
+```
+
+Let's start by creating a a Permit helper file. This file will be used to initialize the Permit SDK and export the instance. Create a new file called `permit.ts` under `src/lib` folder and add the following code.
+
+```javascript
+import { Permit } from "permitio";
+
+export const permit = new Permit({
+  token: process.env.PERMIT_API_KEY!,
+  pdp: process.env.PDP_URL!,
+});
+```
+
+Now, let's create API routes for syncing users, creating tenants. Let's create a file a file nammed `route.ts` under `src/app/api/sync-user` folder and add the following code.
+
+```javascript
+import { permit } from '@/lib/permit';
+import { NextRequest } from 'next/server';
+
+export async function POST(req: NextRequest) {
+  const { email, first_name, last_name } = await req.json();
+
+  if (!email || !first_name || !last_name) {
+    return new Response(JSON.stringify({ error: 'Missing required fields' }), { status: 400 });
+  }
+
+  try {
+    const user = await permit.api.users.sync({
+      key: email,
+      email,
+      first_name,
+      last_name,
+    });
+    return new Response(JSON.stringify(user), { status: 201 });
+  } catch (err) {
+    return new Response(JSON.stringify({ error: 'Failed to sync user' }), { status: 500 });
+  }
+}
+```
+
+In this code, we are using the `sync` method of the `Permit` class to sync the user with Permit.io. The `sync` method takes a dictionary with the user details and returns the user object. We are using `async/await` to handle the async function.
+
+Now, let's create another file called `create-tenant.ts` under `src/app/api/create-tenant` folder and add the following code.
+
+```javascript
+import { permit } from '@/lib/permit';
+import { NextRequest } from 'next/server';
+
+export async function POST(req: NextRequest) {
+  const { key, name, description } = await req.json();
+
+  if (!key || !name) {
+    return new Response(JSON.stringify({ error: 'Missing key or name' }), { status: 400 });
+  }
+
+  try {
+    const tenant = await permit.api.tenants.create({
+      key,
+      name,
+      description,
+    });
+    return new Response(JSON.stringify(tenant), { status: 201 });
+  } catch (err) {
+    return new Response(JSON.stringify({ error: 'Failed to create tenant' }), { status: 500 });
+  }
+}
+```
+
+Now, for policy enforcement, we will not create a simple endpoint instead we will use middleware to enforce the policy. Create a new file called `middleware.ts` under `src/middleware` folder and add the following code.
+
+```javascript
+import { NextRequest, NextResponse } from 'next/server';
+import { Permit } from 'permitio';
+
+const permit = new Permit({
+  token: process.env.PERMIT_API_KEY!,
+  pdp: process.env.PDP_URL!,
+});
+
+export async function middleware(req: NextRequest) {
+  if (!req.nextUrl.pathname.startsWith('/api/protected/')) {
+    return NextResponse.next();
+  }
+
+  const user = req.headers.get('x-user');
+  const action = req.headers.get('x-action');
+  const resource = req.headers.get('x-resource');
+
+  if (!user || !action || !resource) {
+    return new NextResponse(JSON.stringify({ error: 'Missing permission info' }), { status: 400 });
+  }
+
+  try {
+    const permitted = await permit.check(user, action, resource);
+    if (!permitted) {
+      return new NextResponse(JSON.stringify({ message: 'User is not permitted' }), { status: 403 });
+    }
+    return NextResponse.next();
+  } catch (err) {
+    return new NextResponse(JSON.stringify({ error: 'Permission check failed' }), { status: 500 });
+  }
+}
+
+export const config = {
+  matcher: ['/api/protected/:path*'],
+};
+```
+
+We have created a middleware to check if the user has access to the resource. The middleware will check if the request is made to the `/api/protected/` route and then check if the user has access to the resource. If the user is not permitted, it will return a 403 response. On the Permit side we are using the `check` method to check if the user has access to the resource. The `check` method takes three parameters: `user`, `action` and `resource`. The `user` is the unique key of the user, `action` is the action that the user is trying to perform and `resource` is the resource that the user is trying to access. The `check` method returns a boolean value, if the user is permitted to access the resource, it returns `True`, otherwise it returns `False`.
+
+To see if all the above code is working fine, let's create a simple API route to test the middleware. Create a new file called `route.ts` under `src/app/api/protected/secret.ts` folder and add the following code.
+
+```javascript
+import { NextRequest } from 'next/server';
+
+export async function GET(req: NextRequest) {
+  return new Response(
+    JSON.stringify({ secret: "You have pass the auth check" }),
+    { headers: { "Content-Type": "application/json" } }
+  );
+} 
+```
+This is a simple API route that will return a secret message if the user is permitted to access the resource.
+
+Now, we have everything ready. Let's run the application and do `curl` requests to test the endpoints the sync user route and the protected route.
+
+Once the server is running, using `curl`, let's create/sync a user.
+
+![curl create user](/img/quick-start-guide/next-sync-user.png)
+
+As we can the JSON response, the user is created successfully with the email, first name and last name we provided. 
+
+We can also verify the user in the Permit dashboard also let's give the user **Veiwer** access. To do that select the Directory from the left sidebar and the select the user we just created. Then click on the **Add Role** button and select Tenant and then select **Viewer** role and save it. This will give the user access to the **Visit** resource we created in the policy. We wll verify this later when we check the access.
+
+![user access](/img/quick-start-guide/user-access.png)
+
+Now, let's setup the PDP server and check the access.
+
+## Policy Check
+
+Now, our application is ready by syncing the user and we have policy created. Let's enforce and check the policy. To enforce the policy we use Permit's PDP (Policy Decision Point) to check if the user has access to the resource. So first let's setup the PDP.
+
+To start a PDP we can use the Permit's CLI. To start a PDP, execute the below command in your terminal. Make sure you have Docker installed in your machine as this will start a PDP container locally on your machine.
+
+```bash
+permit pdp run
+```
+
+One you execute the above command, it will start a PDP server locally on your machine. You can check the logs to see if the PDP server is running successfully. The PDP server will be running on port `7766` by default. You can also change the port. 
+
+![permit pdp run](/img/quick-start-guide/create-pdp.png)
+
+
+
+Now, everything is ready, let's restart the Flask server and check the access. To check the access. As we have created a user and gave him access to the resource via the dashboard, we can check the access using curl.
+
+![curl check access](/img/quick-start-guide/check-perm-next-pass.png)
+
+As we can see in the image above, the user is permitted to access the resource. Let's remove the access from the dashboard and check again. 
+
+![curl check access](/img/quick-start-guide/check-perm-next-fail.png)
+
+Now this time we can see that the user is not permitted to access the resource. This is how we can enforce policies using Permit.io in our Flask application.
+
+
+
