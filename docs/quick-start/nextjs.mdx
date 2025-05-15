@@ -142,7 +142,7 @@ export async function middleware(req: NextRequest) {
   if (!user || !action || !resource) {
     return new NextResponse(JSON.stringify({ error: 'Missing permission info' }), { status: 400 });
   }
-
+  `q
   try {
     const permitted = await permit.check(user, action, resource);
     if (!permitted) {
