@@ -7,7 +7,7 @@ sidebar_position: 3
 
 ## Overview
 
-Flask is a lightweight WSGI web application framework in Python. It is designed with simplicity and flexibility in mind. In this guide, we will quickly go through the steps to integrate Permit.io with Flask. We will use the Permit's CLI to create a new environment and a policy with a template. Then we will use the Permit SDK to integrate it with our Flask application. We will also setup the PDP (Policy Decision Point) server locally using Docker.
+Flask is a lightweight WSGI web application framework in Python. It is designed with simplicity and flexibility in mind. In this guide, we will quickly go through the steps to integrate Permit.io with Flask. We will use the Permit CLI to create a new environment and a policy using a template. Then we will use the Permit SDK to integrate it with our Flask application. We will also set up the PDP (Policy Decision Point) server locally using Docker.
 
 In the application code, we will look at how to sync users and tenants with Permit.io. We will also see how to check whether a user has access to a specific resource using the Permit SDK.
 
@@ -20,37 +20,37 @@ In the application code, we will look at how to sync users and tenants with Perm
 
 ## Getting started
 
-To get started, we will  first create a new policy with a template using the Permit CLI. Assuming you have already created an account with Permit.io.
+To get started, we will first create a new policy using a template with the Permit CLI. This assumes you have already created an account with Permit.io.
 
-### Hands on with Permit CLI
+### Hands-on with the Permit CLI
 
-To get started, we will first install the Permit CLI. To install the CLI, execute the below command in your terminal. We will be using the CLI to create policies, run the PDP server, and perform other tasks.
+To get started, we will first install the Permit CLI. To install the CLI, execute the command below in your terminal. We will use the CLI to create policies, run the PDP server, and perform other tasks.
 
 ```bash
 npm install -g @permitio/cli
 ```
 
-Once the installation is complete, execute `permit` to confirm the installation. Then to authenticate, execute `permit login`. This will open a browser window and ask you to log in with your Permit account. After logging in, the CLI will be authenticated and ready to use. This will also log into the default environment (a project can have multiple environments). We can change the environment by executing `permit env select` and then selecting the environment we want to use.
+Once the installation is complete, execute `permit` to confirm the installation. Then, to authenticate, run `permit login`. This will open a browser window and ask you to log in with your Permit account. After logging in, the CLI will be authenticated and ready to use. This also logs you into the default environment (a project can have multiple environments). You can change the environment by executing `permit env select` and then selecting the environment you want to use.
 
-Now, let's create a policy with a template. The benefit of using a template is that we can create a policy with pre-defined roles and resources with all the good practices. This will save us time and effort in creating a policy from scratch. To check the available templates, execute `permit template list`. Based on our need we can apply the template to a new policy by executing `permit template apply <template-name>`.
+Now, let's create a policy using a template. The benefit of using a template is that we can create a policy with predefined roles and resources based on best practices. This saves us time and effort compared to creating a policy from scratch. To check the available templates, execute `permit template list`. Based on your needs, you can apply a template to a new policy by executing `permit template apply <template-name>`.
 
 ![cli template list](/img/quick-start-guide/env-template.png)
 
-We have used the **fga-tradeoffs** template to create a new policy.
+We used the **fga-tradeoffs** template to create a new policy.
 
-Now, let's visit the Permit dashboard to check the created policy and also get the API key that we will use to authenticate our application when using the Permit SDK.
+Now, let's visit the Permit dashboard to check the created policy and also get the API key, which we will use to authenticate our application when using the Permit SDK.
 
-As we can see in the image below, the CLI has created Resources, Roles, and Policies. Now let's add **Read** permission to the **Viewer** for the **Visit** resource. It is very easy to add permissions using the dashboard. We can also add more roles and resources as per our need.
+As we can see in the image below, the CLI has created Resources, Roles, and Policies. Now let's add **Read** permission to the **Viewer** role for the **Visit** resource. It is very easy to add permissions using the dashboard. You can also add more roles and resources as needed.
 
 ![permit policy](/img/quick-start-guide/policy-editor-dash.png)
 
-To get the API key, click on **Projects** from the left sidebar, then click on the three dots on the environment we want to use and click on **Copy API Key** and store it in a safe place. We will be using this API key to authenticate our application with Permit.io. If you are having any difficulty in getting the API key, follow this [guide](/overview/connecting-your-app/#1-get-your-permit-environment-api-key).
+To get the API key, click on **Projects** from the left sidebar, then click on the three dots on the environment you want to use and select **Copy API Key**. Store it in a safe place. We will use this API key to authenticate our application with Permit.io. If you have any difficulty obtaining the API key, follow this [guide](/overview/connecting-your-app/#1-get-your-permit-environment-api-key).
 
-Once we are done let's move toward the implementation part and integrate Permit.io with our Flask application.
+Once we are done, let's move to the implementation part and integrate Permit.io with our Flask application.
 
 ### Flask Integration
 
-Once you have a Flask application set up (or you can create a new one for the sake of this guide), we will install the Permit SDK. The Permit SDK is a Python library that allows us to interact with the Permit API. To install the Permit SDK, execute the below command in your terminal.
+Once you have a Flask application set up (or create a new one for this guide), we will install the Permit SDK. The Permit SDK is a Python library that allows us to interact with the Permit API. To install the Permit SDK, execute the command below in your terminal.
 
 ```bash
 pip install permit
@@ -58,7 +58,7 @@ pip install permit
 
 Read more about the SDK [here](/sdk/python/quickstart_python_sync).
 
-Now, below is the application code we created. In this we will be syncing users and creating tenants. The code is explained in detail below.
+Below is the application code we created. In this, we will sync users and create tenants. The code is explained in detail below.
 
 ```python
 # app.py
@@ -83,7 +83,7 @@ class UserIn(BaseModel):
 class TenantIn(BaseModel):
     key: str
     name: str
-    description: str = None # Optional field
+    description: str = None  # Optional field
 
 @app.route("/", methods=["GET"])
 def root():
@@ -103,7 +103,6 @@ def sync_user():
         "last_name": user_in.last_name,
     }))
 
-    # Convert UserRead (or similar) object to dict for serialization
     return jsonify(user.dict() if hasattr(user, "dict") else user.__dict__), 201
 
 @app.route("/create-tenant", methods=["POST"])
@@ -125,11 +124,12 @@ if __name__ == "__main__":
     app.run(debug=True, port=8000)
 ```
 
-At the top, we have imported the necessary dependencies and created a Flask application. We have also imported the `Permit` class from the Permit SDK and `os` to access environment variables. We have also imported `asyncio` to run async functions in a synchronous context. We have used `Pydantic` to validate the request body. 
+At the top, we have imported the necessary dependencies and created a Flask application. We also imported the `Permit` class from the Permit SDK and `os` to access environment variables. We used `asyncio` to run async functions in a synchronous context. We used `Pydantic` to validate the request body.
 
-Then we have created a Flask application using `Flask(__name__)`. Then we have initialized the Permit SDK that needs two environment variables, `PERMIT_API_KEY` and `PERMIT_PDP_URL`. The `PERMIT_API_KEY` is the API key we copied from the dashboard and the `PERMIT_PDP_URL` is the URL of the PDP server. We will set that up later.
+Then, we created a Flask application using `Flask(__name__)`. Next, we initialized the Permit SDK, which needs two environment variables: `PERMIT_API_KEY` and `PERMIT_PDP_URL`. The `PERMIT_API_KEY` is the key we copied from the dashboard, and the `PERMIT_PDP_URL` is the URL of the PDP server. We will set that up later.
 
-We have created two Pydantic models, `UserIn` and `TenantIn`. The `UserIn` model is used to validate the request body for syncing a user. It has three fields: `email`, `first_name`, and `last_name`. The `TenantIn` model is used to validate the request body for creating a tenant. It has three fields: `key`, `name`, and `description`. The description field is optional.
+We created two Pydantic models, `UserIn` and `TenantIn`. The `UserIn` model is used to validate the request body for syncing a user. It has three fields: `email`, `first_name`, and `last_name`. The `TenantIn` model is used to validate the request body for creating a tenant. It has three fields: `key`, `name`, and `description`. The `description` field is optional.
+
 
 ```python
 @app.route("/", methods=["GET"])
@@ -150,7 +150,6 @@ def sync_user():
         "last_name": user_in.last_name,
     }))
 
-    # Convert UserRead (or similar) object to dict for serialization
     return jsonify(user.dict() if hasattr(user, "dict") else user.__dict__), 201
 
 @app.route("/create-tenant", methods=["POST"])
@@ -172,13 +171,13 @@ if __name__ == "__main__":
     app.run(debug=True, port=8000)
 ```
 
-In this part of the code, we have defined two endpoints: `sync-user` and `create-tenant`. The `sync-user` endpoint is used to sync a user with Permit.io, it expects a unique key, email, first name and last name. The `create-tenant` endpoint is used to create a tenant with Permit.io, it expects a unique key, name and description.
+In this part of the code, we defined two endpoints: `sync-user` and `create-tenant`. The `sync-user` endpoint is used to sync a user with Permit.io and expects a unique key, email, first name, and last name. The `create-tenant` endpoint creates a tenant and expects a unique key, name, and description.
 
-The `sync-user` endpoint uses the `sync` method of the `Permit` class to sync the user with Permit.io. The `sync` method takes a dictionary with the user details and returns the user object. We are using `asyncio.run` to run the async function in a synchronous context. The `create-tenant` endpoint uses the `create` method of the `Permit` class to create a tenant with Permit.io. The `create` method takes a dictionary with the tenant details and returns the tenant object.
+The `sync-user` endpoint uses the `sync` method of the `Permit` class to sync the user with Permit.io. The method takes a dictionary of user details and returns the user object. We're using `asyncio.run` to run the async function in a synchronous context. Similarly, the `create-tenant` endpoint uses the `create` method to create a tenant.
 
-In the end, we are returning the user or tenant object as a JSON response. We are also using `Pydantic` to validate the request body and return the errors if any.
+Finally, we return the user or tenant object as a JSON response. We use `Pydantic` to validate the request body and return validation errors if any.
 
-Once we are done with the code, let's run the FastAPI application and test the `sync-user` using `curl`.
+Once the code is ready, let's run the Flask application and test the `sync-user` endpoint using `curl`.
 
 ![curl create user](/img/quick-start-guide/sync-user.png)
 
@@ -204,7 +203,7 @@ Once you execute the above command, you will see an output like below with infor
 
 ![permit pdp run](/img/quick-start-guide/create-pdp.png)
 
-Once the PDP Server is running, update the `pdp` URL in the FastAPI application. The URL will be `http://localhost:7766` if you are running the PDP locally.
+Once the PDP server is running, update the `pdp` URL in your Flask application. If running locally, the URL will be `http://localhost:7766`.
 
 To check the access, we will create a new endpoint `/check-access` in our FastAPI application. This endpoint will check if the user has access to the resource. Below is the code for the new endpoint. We need to modify the existing code to add the new endpoint like below.
 
