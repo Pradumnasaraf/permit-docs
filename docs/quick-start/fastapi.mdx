@@ -56,16 +56,16 @@ Once you have a FastAPI application set up (or you can create a new one for the 
 pip install permit
 ```
 
+Read more about the SDK [here](/sdk/python/quickstart_python_sync).
+
 Now, below is the application code we created. In this we will be syncing users and creating tenants. The code is explained in detail below.
 
 ```python
 # main.py
-from fastapi import FastAPI
+from fastapi import FastAPI, status
 from permit import Permit
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr 
 import os
-from pydantic import EmailStr
-from fastapi import status
 
 app = FastAPI()
 
