@@ -191,7 +191,8 @@ async def check_permission(data: PermissionCheck):
 
 In this code, we are using the `check` method to check if the user has access to the resource. The `check` method takes three parameters: `user`, `action`, and `resource`. The `user` is the unique key of the user, `action` is the action that the user is trying to perform, and `resource` is the resource that the user is trying to access. If the user is permitted, it returns true, otherwise false. We are using the `check` method of the `Permit` class to check if the user has access to the resource.
 
-Now, everything is ready, let's restart the FastAPI server and test and check the access. As we have created a user and gave them access to the resource via the dashboard, it should be permitted to access the resource.
+Now, everything is ready, let's restart the FastAPI server and test and check the access using `curl`. As we have created a user and gave them access to the resource via the dashboard, it should be permitted to access the resource.
+
 
 ![curl check access](/img/quick-start-guide/check-perm-pass.png)
 
