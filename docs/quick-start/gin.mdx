@@ -65,6 +65,7 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 	"github.com/permitio/permit-golang/pkg/config"
 	"github.com/permitio/permit-golang/pkg/models"
 	"github.com/permitio/permit-golang/pkg/permit"
@@ -86,6 +87,7 @@ type TenantIn struct {
 }
 
 func main() {
+	_ = godotenv.Load()
 
 	apiKey := os.Getenv("PERMIT_API_KEY")
 	pdpURL := os.Getenv("http://localhost:7766")
@@ -105,6 +107,7 @@ func main() {
 
 	router.POST("/sync-user", syncUserHandler)
 	router.POST("/create-tenant", createTenantHandler)
+
 
 	log.Println("🚀 Server running on http://localhost:8000")
 	router.Run(":8000")
@@ -291,29 +294,41 @@ type PermissionCheck struct {
 }
 .
 .
-	router.POST("/check-permission", checkPermissionHandler)
+	
+	// Add a protected route using the middleware
+	router.POST("/check-permission", PermissionMiddleware(), func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"message": "You have access to the protected resource!"})
+	})
 .
 .
-func checkPermissionHandler(c *gin.Context) {
-	var check PermissionCheck
-	if err := c.ShouldBindJSON(&check); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
+// Middleware for permission check
+func PermissionMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		user := c.GetHeader("X-User")
+		action := c.GetHeader("X-Action")
+		resource := c.GetHeader("X-Resource")
 
-	user := enforcement.UserBuilder(check.User).Build()
-	resource := enforcement.ResourceBuilder(check.Resource).Build()
+		if user == "" || action == "" || resource == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Missing permission headers: X-User, X-Action, X-Resource"})
+			c.Abort()
+			return
+		}
 
+		enfUser := enforcement.UserBuilder(user).Build()
+		enfResource := enforcement.ResourceBuilder(resource).Build()
 
-	permitted, err := permitClient.Check(user, enforcement.Action(check.Action), resource)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Permission check failed"})
-		return
-	}
-	if permitted {
-		c.JSON(http.StatusOK, gin.H{"message": "User is permitted"})
-	} else {
-		c.JSON(http.StatusForbidden, gin.H{"message": "User is not permitted"})
+		permitted, err := permitClient.Check(enfUser, enforcement.Action(action), enfResource)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Permission check failed"})
+			c.Abort()
+			return
+		}
+		if !permitted {
+			c.JSON(http.StatusForbidden, gin.H{"message": "User is not permitted"})
+			c.Abort()
+			return
+		}
+		c.Next()
 	}
 }
 ```
