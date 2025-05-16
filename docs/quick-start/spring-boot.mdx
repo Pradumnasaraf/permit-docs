@@ -3,6 +3,241 @@ title: Spring Boot
 sidebar_position: 8
 ---
 
-# Spring Boot Quickstart
+## Overview
 
-This guide will help you integrate Permit.io with your Spring Boot application.
+FastAPI is a modern, fast (high-performance), web framework for building APIs with Python based on standard Python type hints. In this guide, we will quickly go through the steps to integrate Permit.io with FastAPI. We will use the Permit's CLI to create a new environment and a policy with a template. Then we will use the Permit SDK to integrate it with our FastAPI application. We will also setup the PDP (Policy Decision Point) server locally using Docker.
+
+We will see how we can sync users and tenant, assigning roles easily with Permit Dashboard. Then we will see how we can enforce policies using the Permit SDK in our FastAPI application. 
+
+## Prerequisites
+
+- Docker (for running the PDP server)
+- Node.js (for running the Permit CLI)
+- Permit.io account ([Follow this guide](/quickstart) to create an account)
+
+## Getting started
+
+To get started, we will  first create a new policy with a template using the Permit CLI. Assuming you have already created an account with Permit.io.
+
+### Hands on with Permit CLI
+
+To get started, we will first install the Permit CLI. To install the CLI, execute the below command in your terminal. We will be using CLI to create policies, running PDP server and other tasks.
+
+```bash
+npm install -g @permitio/cli
+```
+
+Once the installation is complete, execute `permit` to confirm the installation. Then to authenticate, execute `permit login`. This will open a browser window and ask you to login with your Permit account. After logging in, the CLI will be authenticated and ready to use. This will also login into default environment (a project can have multiple environments),we can change environment by executing `permit env select` and then select the environment we want to use.
+
+Now, let's create a policy with a template. The benefit of using a template is that we can create a policy with pre-defined roles and resources with all the good practices. This will save us time and effort in creating a policy from scratch. To check the available templates, execute `permit template list`. Based on our need we can apply the template to a new policy by executing `permit template apply <template-name>`. 
+
+![cli template list](/img/quick-start-guide/env-template.png)
+
+We have used the **fga-tradeoffs** template to create a new policy.
+
+Now, let's visit the Permit dashboard to check the created policy and also get the API key that we will use to authenticate our application when using the Permit SDK.
+
+As we can see in the image below, CLI has created Resources, Roles and Policies. Now let's add **Read** permission to the **Viewer** to the **Visit** resource. It very easy to add permissions using the dashboard. We can also add more roles and resources as per our need.
+
+![permit policy](/img/quick-start-guide/policy-editor-dash.png)
+
+To get the API key, click on the **Projects** from the left sidebar, then click on the the three dots on on the environment we want to use and click on **Copy API Key** and store it in a safe place. This API key will be used to authenticate our application with Permit.io. If you are having any difficulty in getting the API key, follow this [guide](/overview/connecting-your-app/#1-get-your-permit-environment-api-key).
+
+Once we are done let's move towards the implementation part.
+
+### FastAPI Integration
+
+Once you have a Sprint Boot application is ready, we can start integrating Permit.io with it. Add Permit's dependency to your `pop.xml` file. The dependency is available in Maven Central. 
+
+```xml  
+<dependency>
+  <groupId>io.permit</groupId>
+  <artifactId>permit-sdk-java</artifactId>
+  <version>2.0.0</version>
+</dependency>
+```
+
+This Java code defines the entry point of a Spring Boot application named PermitdemoApplication. It uses the `@SpringBootApplication` annotation to enable auto-configuration, component scanning, and configuration support. The `main()` method calls `SpringApplication.run()`, which starts the Spring Boot application and its embedded web server, making it ready to handle web requests.
+
+```java
+package com.example.permitdemo;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class PermitdemoApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(PermitdemoApplication.class, args);
+    }
+}
+```
+
+The Let's create Permit controller to handle the requests. The controller will have three endpoints. One to sync the user, one to create a tenant and one to check the access. The controller will use the Permit SDK to interact with Permit.io.
+
+```java
+package com.example.permitdemo;
+
+import io.permit.sdk.Permit;
+import io.permit.sdk.PermitConfig;
+import io.permit.sdk.api.PermitApiError;
+import io.permit.sdk.api.PermitContextError;
+import io.permit.sdk.enforcement.Resource;
+import io.permit.sdk.enforcement.User;
+import io.permit.sdk.openapi.models.UserRead;
+import io.permit.sdk.openapi.models.UserCreate;
+import io.permit.sdk.openapi.models.TenantCreate;
+import io.permit.sdk.openapi.models.TenantRead;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.io.IOException;
+import java.util.Map;
+
+@RestController
+public class PermitController {
+
+    private final Permit permit;
+
+    public PermitController(
+            @Value("${PERMIT_API_KEY}") String apiKey,
+            @Value("${PDP_URL:http://localhost:7766}") String pdpUrl
+    ) {
+        this.permit = new Permit(
+                new PermitConfig.Builder(apiKey)
+                        .withPdpAddress(pdpUrl)
+                        .withDebugMode(true)
+                        .build()
+        );
+    }
+
+    @PostMapping("/sync-user")
+    public ResponseEntity<?> syncUser(@RequestBody Map<String, String> body) {
+        String email = body.get("email");
+        String firstName = body.get("first_name");
+        String lastName = body.get("last_name");
+
+        if (email == null || firstName == null || lastName == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Missing required fields"));
+        }
+
+        try {
+            UserRead user = permit.api.users.sync(
+                    new UserCreate(email)
+                            .withEmail(email)
+                            .withFirstName(firstName)
+                            .withLastName(lastName)
+            ).getResult();
+            return ResponseEntity.status(HttpStatus.CREATED).body(user);
+        } catch (IOException | PermitApiError | PermitContextError e) {
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to sync user"));
+        }
+    }
+
+    @PostMapping("/create-tenant")
+    public ResponseEntity<?> createTenant(@RequestBody Map<String, String> body) {
+        String key = body.get("key");
+        String name = body.get("name");
+        String description = body.get("description");
+
+        if (key == null || name == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Missing key or name"));
+        }
+
+        try {
+            TenantCreate tenantCreate = new TenantCreate(key, name).withDescription(description);
+            TenantRead tenant = permit.api.tenants.create(tenantCreate);
+            return ResponseEntity.status(HttpStatus.CREATED).body(tenant);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to create tenant"));
+        }
+    }
+
+    @PostMapping("/check-permission")
+    public ResponseEntity<?> checkPermission(@RequestBody Map<String, Object> body) {
+        String userKey = (String) body.get("user");
+        String action = (String) body.get("action");
+        String resource = (String) body.get("resource");
+
+        if (userKey == null || action == null || resource == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Missing required fields"));
+        }
+
+        try {
+            boolean permitted = permit.check(
+                    User.fromString(userKey),
+                    action,
+                    new Resource.Builder(resource).withTenant("default").build()
+            );
+            if (permitted) {
+                return ResponseEntity.ok(Map.of("message", "User is permitted"));
+            } else {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("message", "User is not permitted"));
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Permission check failed"));
+        }
+    }
+}
+```
+
+The endpoint `/sync-user` is used to sync a user with Permit.io. It expects a JSON body with the following fields: `email`, `first_name` and `last_name`. The endpoint will return the created user object in the response. The endpoint `/create-tenant` is used to create a tenant with Permit.io. It expects a JSON body with the following fields: `key`, `name` and `description`. The endpoint will return the created tenant object in the response. The endpoint `/check-permission` is used to check if a user has access to a resource. It expects a JSON body with the following fields: `user`, `action` and `resource`. The endpoint will return a boolean value indicating if the user is permitted to access the resource.
+
+Update the `application.properties` file with the API key and PDP URL. The API key can be found in the Permit dashboard as mentioned above. The PDP URL is the URL of the PDP server that we will run locally.
+
+
+Once the server is running, using `curl`, let's create/sync a user.
+
+![curl create user](/img/quick-start-guide/sync-user.png)
+
+As we can the JSON response, the user is created successfully with the email, first name and last name we provided. 
+
+We can also verify the user in the Permit dashboard also let's give the user **Veiwer** access. To do that select the Directory from the left sidebar and the select the user we just created. Then click on the **Add Role** button and select Tenant and then select **Viewer** role and save it. This will give the user access to the **Visit** resource we created in the policy. We wll verify this later when we check the access.
+
+![user access](/img/quick-start-guide/user-access.png)
+
+Now, let's setup the PDP server and check the access.
+
+## Policy Check
+
+Now, our application is ready by syncing the user and we have policy created. Let's enforce and check the policy. To enforce the policy we use Permit's PDP (Policy Decision Point) to check if the user has access to the resource. So first let's setup the PDP.
+
+To start a PDP we can use the Permit's CLI. To start a PDP, execute the below command in your terminal. Make sure you have Docker installed in your machine as this will start a PDP container locally on your machine.
+
+```bash
+permit pdp run
+```
+
+One you execute the above command, it will start a PDP server locally on your machine. You can check the logs to see if the PDP server is running successfully. The PDP server will be running on port `7766` by default. You can also change the port. 
+
+![permit pdp run](/img/quick-start-guide/create-pdp.png)
+
+
+One the PDP Server is running, update the `pdp` URL in the FastAPI application. The URL will be `http://localhost:7766` if you are running the PDP locally. And create another endpoint to check our enforcement. This is how the updated code will look like.
+
+
+In this code, we have added a new endpoint `/check-access` which will check if the user has access to the resource. We have defined a new model `PermissionCheck` to validate the request body.
+
+We are using the `check` method to check if the user has access to the resource. The `check` method takes three parameters: `user`, `action` and `resource`. The `user` is the unique key of the user, `action` is the action that the user is trying to perform and `resource` is the resource that the user is trying to access.
+The `check` method returns a boolean value, if the user is permitted to access the resource, it returns `True`, otherwise it returns `False`.
+
+Now, everything is ready, let's restart the FastAPI server and check the access. To check the access.As we have created a user and gave him access to the resource via the dashboard, we can check the access using curl.
+
+![curl check access](/img/quick-start-guide/check-perm-pass.png)
+
+As we can see in the image above, the user is permitted to access the resource. Let's remove the access from the dashboard and check again. 
+
+![curl check access](/img/quick-start-guide/check-perm-fail.png)
+
+Now this time we can see that the user is not permitted to access the resource. This is how we can enforce policies using Permit.io with FastAPI.
+
+
